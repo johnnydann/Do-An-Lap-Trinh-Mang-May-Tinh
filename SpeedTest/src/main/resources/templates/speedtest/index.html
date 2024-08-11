@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Speed Checker</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        body {
+            background-color: #0e0e20;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+        }
+        .gauge-container {
+            width: 100%;
+            height: 300px;
+            margin: 20px auto;
+            position: relative;
+        }
+        .gauge-label {
+            font-size: 2em;
+            margin-top: 10px;
+        }
+        .details {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 1.2em;
+        }
+        .detail-item i {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            border: none;
+            background-color: #00c853;
+            color: #ffffff;
+            border-radius: 5px;
+        }
+        .result-container {
+            display: none;
+            margin-top: 20px;
+            font-size: 1.2em;
+            text-align: center;
+        }
+        .speed-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .speed-value {
+            font-size: 2.5em;
+        }
+        .history-container {
+            text-align: center;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ffffff;
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: #333333;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Network Speed Checker</h1>
+
+    <!-- Initial view with the start button -->
+    <div id="startView">
+        <button id="startBtn">Bắt đầu đo tốc độ</button>
+    </div>
+
+    <!-- View to show speed test results -->
+    <div class="result-container" id="resultView">
+        <div class="speed-label">
+            <div class="download-label">
+                <i class="fas fa-download"></i>
+                Download: <span id="downloadValue">0</span> Mbps
+            </div>
+            <div class="upload-label">
+                <i class="fas fa-upload"></i>
+                Upload: <span id="uploadValue">0</span> Mbps
+            </div>
+        </div>
+        <div class="gauge-container">
+            <canvas id="speedGauge"></canvas>
+            <div class="gauge-label">
+                <span id="speedValue">0</span> Mbps
+            </div>
+        </div>
+        <div class="details">
+            <div class="detail-item">
+                <i class="fas fa-tachometer-alt"></i>
+                Ping: <span id="pingValue">0</span> ms
+            </div>
+        </div>
+        <button id="restartBtn">Đo lại</button>
+    </div>
+</div>
+<!-- History view -->
+<div class="history-container">
+    <h2>Lịch sử đo tốc độ mạng</h2>
+    <table id="historyTable">
+        <thead>
+        <tr>
+            <th>Thời gian</th>
+            <th>Download (Mbps)</th>
+            <th>Upload (Mbps)</th>
+            <th>Ping (ms)</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!-- Dữ liệu lịch sử sẽ được thêm vào đây -->
+        </tbody>
+    </table>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gauge.js/1.3.8/gauge.min.js"></script>
+<script>
+    $(document).ready(function () {
+        var gauge;
+        var gaugeUpdateInterval;
+
+        $('#startBtn').click(function () {
+            $('#startView').hide();
+            $('#resultView').show();
+            $('#restartBtn').hide();
+            performSpeedTest();
+        });
+
+        $('#restartBtn').click(function () {
+            resetView();
+        });
+
+        function performSpeedTest() {
+            console.log("Starting speed test...");
+
+            fetch('/speedtest')
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Speed test data:", data);
+                    $('#pingValue').text(data.ping.toFixed(2));
+
+                    initializeGauge();
+
+                    let maxDownloadSpeed = data.downloadSpeed;
+                    let maxUploadSpeed = data.uploadSpeed;
+                    let intervalDuration = 100;
+                    let downloadTime = 8000;
+                    let uploadTime = 8000;
+
+                    startDownloadTest(maxDownloadSpeed, downloadTime, intervalDuration, function () {
+                        startUploadTest(maxUploadSpeed, uploadTime, intervalDuration);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error during speed test:', error);
+                });
+        }
+
+        function startDownloadTest(maxSpeed, totalTime, intervalDuration, callback) {
+            let startTime = Date.now();
+
+            gaugeUpdateInterval = setInterval(() => {
+                let elapsedTime = Date.now() - startTime;
+                if (elapsedTime < totalTime) {
+                    let downloadSpeed = Math.min(maxSpeed, (elapsedTime / totalTime) * maxSpeed);
+                    gauge.set(downloadSpeed);
+                    $('#speedValue').text(downloadSpeed.toFixed(2));
+                    $('#downloadValue').text(downloadSpeed.toFixed(2));
+                } else {
+                    clearInterval(gaugeUpdateInterval);
+                    callback();
+                }
+            }, intervalDuration);
+        }
+
+        function startUploadTest(maxSpeed, totalTime, intervalDuration) {
+            $('#speedValue').text('0');
+            $('#uploadValue').text('0');
+            let startTime = Date.now();
+
+            gaugeUpdateInterval = setInterval(() => {
+                let elapsedTime = Date.now() - startTime;
+                if (elapsedTime < totalTime) {
+                    let uploadSpeed = Math.min(maxSpeed, (elapsedTime / totalTime) * maxSpeed);
+                    gauge.set(uploadSpeed);
+                    $('#speedValue').text(uploadSpeed.toFixed(2));
+                    $('#uploadValue').text(uploadSpeed.toFixed(2));
+                } else {
+                    clearInterval(gaugeUpdateInterval);
+                    $('#restartBtn').show();
+                }
+            }, intervalDuration);
+        }
+
+        function initializeGauge() {
+            if (!gauge) {
+                console.log("Initializing gauge...");
+                var opts = {
+                    angle: 0.0,
+                    lineWidth: 0.2,
+                    radiusScale: 1,
+                    pointer: {
+                        length: 0.6,
+                        strokeWidth: 0.035,
+                        color: '#ffffff'
+                    },
+                    limitMax: false,
+                    limitMin: false,
+                    colorStart: '#6FADCF',
+                    colorStop: '#8FC0DA',
+                    strokeColor: '#E0E0E0',
+                    generateGradient: true,
+                    highDpiSupport: true,
+                    staticZones: [
+                        {strokeStyle: "#F03E3E", min: 0, max: 10},
+                        {strokeStyle: "#FFDD00", min: 10, max: 20},
+                        {strokeStyle: "#30B32D", min: 20, max: 30},
+                        {strokeStyle: "#6FADCF", min: 30, max: 40},
+                        {strokeStyle: "#8FC0DA", min: 40, max: 50},
+                        {strokeStyle: "#E0E0E0", min: 50, max: 60},
+                        {strokeStyle: "#00C853", min: 60, max: 70},
+                        {strokeStyle: "#00C853", min: 70, max: 80},
+                        {strokeStyle: "#00C853", min: 80, max: 90},
+                        {strokeStyle: "#00C853", min: 90, max: 100}
+                    ],
+                    staticLabels: {
+                        font: "10px sans-serif",
+                        labels: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                        color: "#FFFFFF",
+                        fractionDigits: 0
+                    }
+                };
+                var target = document.getElementById('speedGauge');
+                gauge = new Gauge(target).setOptions(opts);
+                gauge.maxValue = 100;
+                gauge.setMinValue(0);
+                gauge.animationSpeed = 32;
+            }
+        }
+
+        function resetView() {
+            $('#resultView').hide();
+            $('#startView').show();
+            $('#pingValue').text('0');
+            $('#downloadValue').text('0');
+            $('#uploadValue').text('0');
+            $('#speedValue').text('0');
+            var target = document.getElementById('speedGauge');
+            if (target.getContext) {
+                target.getContext('2d').clearRect(0, 0, target.width, target.height);
+            }
+            gauge = null;
+        }
+
+       /* function loadHistory() {
+            $.ajax({
+                url: '/speedtest/history',
+                method: 'GET',
+                success: function (data) {
+                    var tbody = $('#historyTable tbody');
+                    tbody.empty();
+                    data.forEach(function (item) {
+                        var row = '<tr>' +
+                            '<td>' + new Date(item.timestamp).toLocaleString() + '</td>' +
+                            '<td>' + item.downloadSpeed.toFixed(2) + '</td>' +
+                            '<td>' + item.uploadSpeed.toFixed(2) + '</td>' +
+                            '<td>' + item.ping.toFixed(2) + '</td>' +
+                            '</tr>';
+                        tbody.append(row);
+                    });
+                },
+                error: function () {
+                    alert('Có lỗi xảy ra khi tải lịch sử đo tốc độ mạng.');
+                }
+            });
+        }*/
+
+        // Load history on page load
+        loadHistory();
+    });
+</script>
+</body>
+</html>
